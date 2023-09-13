@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <!-- Essential parameters -->
+  <arg name="map_path" description="point cloud and lanelet2 map directory path"/>
+  <arg name="vehicle_model" description="vehicle model name"/>
+  <arg name="sensor_model" description="sensor model name"/>
+  <arg name="vehicle_id" default="$(env VEHICLE_ID default)" description="vehicle specific ID"/>
+
+  <!-- Optional parameters -->
+  <arg name="rviz" default="true" description="launch rviz"/>
+  <arg name="rviz_config" default="$(find-pkg-share autoware_launch)/rviz/autoware.rviz" description="rviz config"/>
+  <arg name="lanelet2_map_file" default="lanelet2_map.osm" description="lanelet2 map file name"/>
+  <arg name="pointcloud_map_file" default="pointcloud_map.pcd" description="pointcloud map file name"/>
+  <arg name="cruise_planner_type" default="obstacle_stop_planner" description="type of cruise planner"/>
+  <!-- Optional parameters for scenario simulation -->
+  <arg name="initial_engage_state" default="true" description="/vehicle/engage state after starting Autoware"/>
+  <arg name="perception/enable_detection_failure" default="true" description="enable to simulate detection failure when using dummy perception"/>
+  <arg name="perception/enable_object_recognition" default="true" description="enable object recognition"/>
+  <arg name="perception/enable_traffic_light" default="false" description="enable traffic light"/>
+  <arg name="sensing/visible_range" default="300.0" description="visible range when using dummy perception"/>
+  <arg name="scenario_simulation" default="false" description="use scenario simulation"/>
+  <!-- Optional parameters for vcu emulation -->
+  <arg name="vehicle_simulation" default="false" description="use vehicle simulation"/>
+
+  <!-- Global parameters -->
+  <!-- Do not add "group" in order to propagate global parameters -->
+  <include file="$(find-pkg-share global_parameter_loader)/launch/global_params.launch.py">
+    <arg name="vehicle_model" value="$(var vehicle_model)"/>
+  </include>
+
+  <!-- Vehicle -->
+  <group>
+    <let name="launch_vehicle_interface" value="false" if="$(var vehicle_simulation)"/>
+    <let name="launch_vehicle_interface" value="true" unless="$(var vehicle_simulation)"/>
+
+    <include file="$(find-pkg-share tier4_vehicle_launch)/launch/vehicle.launch.xml">
+      <arg name="vehicle_model" value="$(var vehicle_model)"/>
+      <arg name="sensor_model" value="$(var sensor_model)"/>
+      <arg name="launch_vehicle_interface" value="$(var launch_vehicle_interface)"/>
+      <arg name="config_dir" value="$(find-pkg-share individual_params)/config/$(var vehicle_id)/$(var sensor_model)"/>
+    </include>
+  </group>
+
+  <!-- System -->
+  <group>
+    <include file="$(find-pkg-share system_launch)/launch/system.launch.xml">
+      <arg name="run_mode" value="planning_simulation"/>
+      <arg name="sensor_model" value="$(var sensor_model)"/>
+    </include>
+  </group>
+
+  <!-- Map -->
+  <group>
+    <include file="$(find-pkg-share tier4_map_launch)/launch/map.launch.py">
+      <arg name="lanelet2_map_path" value="$(var map_path)/$(var lanelet2_map_file)" />
+      <arg name="pointcloud_map_path" value="$(var map_path)/$(var pointcloud_map_file)"/>
+    </include>
+  </group>
+
+  <!-- Planning -->
+  <group>
+    <include file="$(find-pkg-share planning_launch)/launch/planning.launch.xml">
+      <arg name="cruise_planner_type" value="$(var cruise_planner_type)"/>
+    </include>
+  </group>
+
+  <!-- Control -->
+  <group>
+    <include file="$(find-pkg-share control_launch)/launch/control.launch.xml">
+      <!-- options for lateral_controller_mode: mpc_follower, pure_pursuit -->
+      <arg name="lateral_controller_mode" value="mpc_follower" />
+      <!-- options for longitudinal_controller_mode: pid -->
+      <arg name="longitudinal_controller_mode" value="pid" />
+      <!-- Options for external emergency stop module. Heartbeat topic is required if this is true. -->
+      <arg name="use_external_emergency_stop" value="false" />
+    </include>
+  </group>
+
+  <!-- Vehicle twist -->
+  <group>
+    <include file="$(find-pkg-share vehicle_velocity_converter)/launch/vehicle_velocity_converter.launch.xml">
+      <arg name="input_vehicle_velocity_topic" value="/vehicle/status/velocity_status"/>
+      <arg name="output_twist_with_covariance" value="/sensing/vehicle_velocity_converter/twist_with_covariance"/>
+      <arg name="config_file" value="$(find-pkg-share individual_params)/config/$(env VEHICLE_ID default)/aip_x2/vehicle_velocity_converter.param.yaml" />
+    </include>
+  </group>
+
+  <!-- twist_estimator module -->
+  <group>
+    <push-ros-namespace namespace="twist_estimator"/>
+    <include file="$(find-pkg-share localization_launch)/launch/twist_estimator/twist_estimator.launch.xml">
+    </include>
+  </group>
+
+  <!-- twist2accel module -->
+  <group>
+    <include file="$(find-pkg-share twist2accel)/launch/twist2accel.launch.xml">
+      <arg name="use_odom" value="true"/>
+      <arg name="in_odom" value="/localization/kinematic_state"/>
+      <arg name="in_twist" value="/localization/twist_estimator/twist_with_covariance"/>
+      <arg name="out_accel" value="/localization/acceleration"/>
+    </include>
+  </group>
+
+  <!-- Autoware API -->
+  <group>
+    <include file="$(find-pkg-share autoware_api_launch)/launch/autoware_api.launch.xml"/>
+  </group>
+
+  <!-- Tools -->
+  <group>
+    <!-- Rviz -->
+    <node
+      pkg="rviz2"
+      exec="rviz2"
+      name="rviz2"
+      output="screen"
+      args="-d $(var rviz_config) -s $(find-pkg-share autoware_launch)/rviz/image/autoware.png"
+      if="$(var rviz)"
+    />
+    <include file="$(find-pkg-share ad_api_adaptors)/launch/rviz_adaptors.launch.xml" if="$(var rviz)"/>
+
+    <!-- Web Controller -->
+    <include file="$(find-pkg-share web_controller)/launch/web_controller.launch.xml"/>
+  </group>
+
+  <!-- Simulator -->
+  <group>
+    <let name="launch_dummy_perception" value="false" if="$(var scenario_simulation)"/>
+    <let name="launch_dummy_perception" value="true" unless="$(var scenario_simulation)"/>
+    <let name="launch_dummy_vehicle" value="false" if="$(var scenario_simulation)"/>
+    <let name="launch_dummy_vehicle" value="true" unless="$(var scenario_simulation)"/>
+    <let name="launch_dummy_localization" value="true"/>
+
+    <include file="$(find-pkg-share simulator_launch)/launch/simulator_with_vcu_simulation.launch.xml">
+      <arg name="launch_dummy_perception" value="$(var launch_dummy_perception)"/>
+      <arg name="launch_dummy_vehicle" value="$(var launch_dummy_vehicle)"/>
+      <arg name="launch_dummy_localization" value="$(var launch_dummy_localization)"/>
+      <arg name="perception/enable_detection_failure" value="$(var perception/enable_detection_failure)"/>
+      <arg name="perception/enable_object_recognition" value="$(var perception/enable_object_recognition)"/>
+      <arg name="perception/enable_traffic_light" value="$(var perception/enable_traffic_light)"/>
+      <arg name="sensing/visible_range" value="$(var sensing/visible_range)"/>
+      <arg name="vehicle_model" value="$(var vehicle_model)"/>
+      <arg name="initial_engage_state" value="$(var initial_engage_state)"/>
+    </include>
+  </group>
+</launch>
