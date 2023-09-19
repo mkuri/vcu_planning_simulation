@@ -87,20 +87,56 @@
 
   <!-- twist_estimator module -->
   <group>
-    <push-ros-namespace namespace="twist_estimator"/>
-    <include file="$(find-pkg-share localization_launch)/launch/twist_estimator/twist_estimator.launch.xml">
+    <include file="$(find-pkg-share gyro_odometer)/launch/gyro_odometer.launch.xml">
+      <arg name="input_vehicle_twist_with_covariance_topic" value="/sensing/vehicle_velocity_converter/twist_with_covariance"/>
+      <arg name="output_twist_with_covariance_topic" value="/localization/twist_estimator/twist_with_covariance"/>
+      <arg name="output_twist_with_covariance_raw_topic" value="/localization/twist_estimator/twist_with_covariance_raw"/>
     </include>
   </group>
 
   <!-- twist2accel module -->
   <group>
     <include file="$(find-pkg-share twist2accel)/launch/twist2accel.launch.xml">
-      <arg name="use_odom" value="true"/>
+      <arg name="use_odom" value="false"/>
       <arg name="in_odom" value="/localization/kinematic_state"/>
       <arg name="in_twist" value="/localization/twist_estimator/twist_with_covariance"/>
       <arg name="out_accel" value="/localization/acceleration"/>
     </include>
   </group>
+
+  <!-- imu -->
+  <arg name="launch_driver" default="true" />
+  <arg name="interface" default="can1"/>
+  <arg name="receiver_interval_sec" default="0.01"/>
+
+  <group>
+    <push-ros-namespace namespace="sensing/imu"/>
+
+    <group>
+      <push-ros-namespace namespace="tamagawa"/>
+      <include file="$(find-pkg-share ros2_socketcan)/launch/socket_can_receiver.launch.py">
+        <arg name="interface" value="$(var interface)"/>
+        <arg name="interval_sec" value="$(var receiver_interval_sec)"/>
+      </include>
+      <node pkg="tamagawa_imu_driver" name="tag_can_driver" exec="tag_can_driver" if="$(var launch_driver)">
+        <remap from="/can/imu" to="from_can_bus"/>
+        <remap from="imu/data_raw" to="imu_raw"/>
+        <param name="imu_frame_id" value="tamagawa/imu_link"/>
+      </node>
+    </group>
+
+    <include file="$(find-pkg-share imu_corrector)/launch/imu_corrector.launch.xml">
+      <arg name="input_topic" value="tamagawa/imu_raw" />
+      <arg name="output_topic" value="imu_data" />
+      <arg name="param_file" value="$(find-pkg-share individual_params)/config/$(env VEHICLE_ID default)/aip_x2/imu_corrector.param.yaml" />
+    </include>
+
+    <include file="$(find-pkg-share imu_monitor)/launch/imu_monitor.launch.xml">
+      <arg name="config_file" value="$(find-pkg-share imu_monitor)/config/imu_monitor.param.yaml"/>
+    </include>
+  </group>
+
+</launch>
 
   <!-- Autoware API -->
   <group>
