@@ -136,8 +136,6 @@
     </include>
   </group>
 
-</launch>
-
   <!-- Autoware API -->
   <group>
     <include file="$(find-pkg-share autoware_api_launch)/launch/autoware_api.launch.xml"/>
