@@ -116,6 +116,8 @@ VcuPlanningSimulator::VcuPlanningSimulator(const rclcpp::NodeOptions & options)
 
   pub_odom_ = create_publisher<Odometry>("output/odometry", QoS{1});
   pub_tf_ = create_publisher<tf2_msgs::msg::TFMessage>("/tf", QoS{1});
+  pub_control_mode_report_ =
+    create_publisher<ControlModeReport>("output/control_mode_report", QoS{1});
 
   /* set param callback */
   set_param_res_ = this->add_on_set_parameters_callback(
@@ -263,6 +265,7 @@ void VcuPlanningSimulator::on_timer()
   // publish vehicle state
   publish_odometry(current_odometry_);
   publish_tf(current_odometry_);
+  publish_control_mode_report();
 }
 
 void VcuPlanningSimulator::on_initialpose(const PoseWithCovarianceStamped::ConstSharedPtr msg)
@@ -459,6 +462,12 @@ void VcuPlanningSimulator::publish_tf(const Odometry & odometry)
   tf2_msgs::msg::TFMessage tf_msg{};
   tf_msg.transforms.emplace_back(std::move(tf));
   pub_tf_->publish(tf_msg);
+}
+
+void VcuPlanningSimulator::publish_control_mode_report()
+{
+  current_control_mode_.stamp = get_clock()->now();
+  pub_control_mode_report_->publish(current_control_mode_);
 }
 }  // namespace vcu_planning_simulator
 }  // namespace simulation
